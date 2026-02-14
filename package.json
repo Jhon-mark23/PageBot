@@ -1,0 +1,27 @@
+{
+  "name": "Pagebot",
+  "version": "1.0.5",
+  "description": "A simple starting repl for Facebook Business Pagebot Developers",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "YanMaglinte",
+    "Facebook",
+    "Business",
+    "Pagebot"
+  ],
+  "author": "Yan Maglinte",
+  "license": "MIT",
+  "dependencies": {
+    "@types/node": "^18.0.6",
+    "axios": "^1.7.7",
+    "body-parser": "^1.20.3",
+    "express": "^4.21.1",
+    "fontstyles": "^1.1.2",
+    "fs-extra": "^11.2.0",
+    "gpti": "^2.1.8",
+    "gradient-string": "^2.0.2"
+  }
+}
