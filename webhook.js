@@ -1,108 +1,66 @@
 const config = require("./config.json");
 const utils = require("./modules/utils");
 const fs = require("fs");
+const path = require("path");
 
-let messagesCache;
+const messagesFilePath = path.join(__dirname, "./page/data.json");
+let messagesCache = {};
 
-if (config.clearData) {
-  messagesCache = {};
-} else {
-  messagesCache = JSON.parse(fs.readFileSync("./page/data.json"), "utf8");
-};
-
-const messagesFilePath = "./page/data.json";
-const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20 MB
-
-function writeToFile() {
-  try {
-    const dataToWrite = JSON.stringify(messagesCache, null, 2);
-
-    const fileStats = fs.existsSync(messagesFilePath)
-      ? fs.statSync(messagesFilePath)
-      : null;
-    if (fileStats && fileStats.size > MAX_FILE_SIZE) {
-      pruneMessagesCache();
-    }
-
-    fs.writeFileSync(messagesFilePath, dataToWrite, "utf8");
-  } catch (error) {
-    console.error("Error writing to file:", error);
-  }
+if (!fs.existsSync(messagesFilePath)) {
+  fs.writeFileSync(messagesFilePath, "{}", "utf8");
 }
 
-function pruneMessagesCache() {
-  const keys = Object.keys(messagesCache);
-  if (keys.length > 1000) {
-    const oldestKey = keys[0];
-    delete messagesCache[oldestKey];
-    pruneMessagesCache();
+try {
+  messagesCache = JSON.parse(fs.readFileSync(messagesFilePath, "utf8"));
+} catch (e) {
+  messagesCache = {};
+}
+
+function writeToFile() {
+  if (config.clearData) return;
+  try {
+    fs.writeFileSync(messagesFilePath, JSON.stringify(messagesCache, null, 2), "utf8");
+  } catch (error) {
+    console.error("Storage error:", error.message);
   }
 }
 
 module.exports.listen = function (event) {
-  try {
-    if (event.object === "page") {
-      event.entry.forEach((entry) => {
-        entry.messaging.forEach(async (event) => {
-          event.type = await utils.getEventType(event);
+  if (event.object !== "page") return;
 
-          global.PAGE_ACCESS_TOKEN = config.PAGE_ACCESS_TOKEN;
+  event.entry.forEach((entry) => {
+    entry.messaging.forEach(async (ev) => {
+      const eventType = await utils.getEventType(ev);
+      ev.type = eventType;
 
-          if (
-            event.type === "message" ||
-            event.type === "message_reply" ||
-            event.type === "attachments" ||
-            event.type === "message_reaction"
-          ) {
-            const mid = event.message?.mid || event.reaction?.mid;
+      global.PAGE_ACCESS_TOKEN = config.PAGE_ACCESS_TOKEN;
 
-            if (event.type === "message" || event.type === "attachments" || "message_reply") {
-              const text = event.message.text;
-              const attachments = event.message.attachments;
+      const mid = ev.message?.mid || ev.reaction?.mid;
 
-              if (mid && text) {
-                messagesCache[mid] = { text };
-              }
+      if (["message", "attachments", "message_reply"].includes(ev.type)) {
+        const text = ev.message?.text;
+        const attachments = ev.message?.attachments;
 
-              if (mid && attachments) {
-                if (!messagesCache[mid]) messagesCache[mid] = {};
-                messagesCache[mid].attachments = attachments;
-              }
-            }
+        if (mid) {
+          if (!messagesCache[mid]) messagesCache[mid] = {};
+          if (text) messagesCache[mid].text = text;
+          if (attachments) messagesCache[mid].attachments = attachments;
+        }
+      }
 
-            if (event.type === "message_reply") {
-              const messageID = event.message.reply_to?.mid;
-              const cachedMessage = messageID ? messagesCache[messageID] : null;
+      if (ev.type === "message_reply") {
+        const replyToMid = ev.message.reply_to?.mid;
+        if (replyToMid && messagesCache[replyToMid]) {
+          ev.message.reply_to.text = messagesCache[replyToMid].text || null;
+          ev.message.reply_to.attachments = messagesCache[replyToMid].attachments || null;
+        }
+      }
 
-              if (event.message.reply_to) {
-                event.message.reply_to.text = cachedMessage?.text || null;
-                event.message.reply_to.attachments =
-                  cachedMessage?.attachments || null;
-              }
-            }
+      if (config.selfListen && ev.message?.is_echo) return;
 
-            if (event.type === "message_reaction") {
-              const cachedMessage = mid ? messagesCache[mid] : null;
-
-              if (cachedMessage) {
-                event.reaction.text = cachedMessage.text || null;
-                event.reaction.attachments = cachedMessage.attachments || null;
-              } else {
-                event.reaction.text = null;
-                event.reaction.attachments = null;
-              }
-            }
-          }
-          
-          if (config.selfListen && event?.message?.is_echo) return;
-          writeToFile();
-          utils.log(event);
-
-          require("./page/main")(event);
-        });
-      });
-    }
-  } catch (error) {
-    console.error(error);
-  }
+      writeToFile();
+      utils.log(ev);
+      require("./page/main")(ev);
+    });
+  });
 };
