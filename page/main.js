@@ -1,5 +1,7 @@
+const path = require("path");
+const config = require("../config.json");
+
 module.exports = async function (event) {
-  const config = require("../config.json");
   const api = {};
   const scripts = [
     "graph",
@@ -11,28 +13,19 @@ module.exports = async function (event) {
     "setMessageReaction",
   ];
 
-  const promises = scripts.map((v) => {
-    return new Promise((resolve, reject) => {
-      const script = require("./src/" + v)(event);
-      if (script) {
-        api[v] = script;
-        resolve();
-      } else {
-        reject(new Error(`Failed to load script: ${v}`));
-      }
+  try {
+    scripts.forEach((v) => {
+      const scriptFunc = require(path.join(__dirname, "src", v))(event);
+      api[v] = scriptFunc;
     });
-  });
 
-  return Promise.all(promises)
-    .then(() => {
-      global.api = api;
-      global.PREFIX = config.PREFIX;
-      global.BOTNAME = config.BOTNAME;
-      
-      require("./handler.js")(event);
-    })
-    .catch((err) => {
-      console.error("Error loading scripts:", err);
-      throw err;
-    });
+    global.api = api;
+    global.PREFIX = config.PREFIX;
+    global.BOTNAME = config.BOTNAME;
+
+    delete require.cache[require.resolve("./handler.js")];
+    require("./handler.js")(event);
+  } catch (err) {
+    console.error("Initialization error:", err.message);
+  }
 };
